@@ -1,92 +1,128 @@
 # Geoid_Modelling
 
+This repository contains the code for Regional Geoid Modelling.
 
+## Members
+- Ayush Gupta
+- Shubhi Kant
 
-## Getting started
+### Steps 1
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+1. Download the observed airborne gravity data i.e. GRAV-D from [here](https://geodesy.noaa.gov/GRAV-D/data_products.shtml).
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
-
+2. Read the downloaded GRAV-D data file using [Get_Data_Points](./Get_Data_Points.m), as shown below:
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/ayush12gupta/geoid_modelling.git
-git branch -M main
-git push -uf origin main
+[lat, lon, elevation, obs_grav] = Get_Data_Points('NGS_GRAVD_Block_MS01_Gravity_Data_BETA1.txt', 32.5, -106, 1.0);
 ```
 
-## Integrate with your tools
+### Step 2
 
-- [ ] [Set up project integrations](https://gitlab.com/ayush12gupta/geoid_modelling/-/settings/integrations)
+1. Download the height anomaly and gravity anomaly for the GGM from [here](http://icgem.gfz-potsdam.de/calcgrid).
 
-## Collaborate with your team
+2. Read the GGM files downloaded using [GGM_Data](./GGM_Data.m), as shown below:
+```
+array = ['points1_GGM.dat'; 'point10001_GGM.dat'; 'point20001_GGM.dat'];
+[lon_ggm, lat_ggm, height_anomaly_ggm, gravity_anomaly_ggm] = GGM_Data (array);
+```
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Automatically merge when pipeline succeeds](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+3. Compute orthometric height by adding flight elevation to GGM height, as shown below:
+```
+ortho_height = elevation + height_anomaly_ggm';
+```
 
-## Test and Deploy
+### Step 3
 
-Use the built-in continuous integration in GitLab.
+1. For computing the free air anomaly use [compute_free_air_anomaly](./compute_free_air_anomaly.m), as shown below:
+```
+FAA = compute_free_air_anomaly(obs_grav, lat, ortho_height, 'WGS84'); 
+```
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing(SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+### Step 4
 
-***
+1. For getting the short wavelength component of gravity subtract the GGM gravity anomaly from free air anomaly, as shown below:
+```
+anomaly_smw = FAA - gravity_anomaly_ggm';
+```
 
-# Editing this README
+### Step 5
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thank you to [makeareadme.com](https://www.makeareadme.com/) for this template.
+1. For compute the correction to remove gravity attraction due to atmosphere use [compute_atm_correction](./compute_atm_correction.m), as shown below:
 
-## Suggestions for a good README
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+```
+atm_correction = compute_atm_correction(ortho_height);
+anomaly_smw_atm = anomaly_smw - atm_correction;
+```
 
-## Name
-Choose a self-explaining name for your project.
+### Step 6
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+1. To convert the gravity anomaly which is in vector for to a grid, use [create_grid](./create_grid.m), as shown below:
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+```
+[lons, lats, dg_smw_atm] = create_grid(anomaly_smw_atm, 0.01, lat, lon);
+```
+### Step 7
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+1. Download the DEM file for your study area from [here](http://srtm.csi.cgiar.org/srtmdata/) as a GeoTIFF file, and convert it into a grid, as shown below:
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+```
+Heights = imread('srtm_15_06.tif'); % Reading DEM file
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+lat_dem = linspace(32.45, 33.55, 1320);  % Defining the latitude range taking a buffer of 0.5 degree
+lon_dem = linspace(-106.1, -105, 1320);  % Defining the longitude range taking a buffer of 0.5 degree
+[X_dem, Y_dem] = meshgrid(lon_dem, lat_dem);
+H_dem = double(Heights(6000-1319:6000,2941:4260)); 
+```
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+2. For computing the terrain correction use [Terrain_Correction](./Terrain_Correction.m), as shown below
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+```
+TC = Terrain_Correction(X_dem, Y_dem, H_dem);
+```
+3. Remove the buffer region from the resulting terrain correction matrix, and compute the Faye anomaly by subtracting the Terrain correction from short wavelength gravity anomaly grid computed in **Step 6**
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+### Step 8
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+1. For computing the disturbing potential due to reduced gravity anomaly using strokes integral use [strokes_integral](./stokes_integral.m), as shown below:
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+```
+Tr = stokes_integral (lons, lats, g_faye, 'WGS84', 0.01);
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+```
 
-## License
-For open source projects, say how it is licensed.
+### Step 9
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+1. Compute the undulations due to short wavelength using Bruns equation by dividing disturbing potential by normal gravity, as shown below:
+
+```
+Nr = Tr./compute_normal_grav(lats, 'WGS84');
+```
+
+### Step 10
+
+1. Download the height anomaly for all the grid points from [here](http://icgem.gfz-potsdam.de/calcgrid).
+
+2. Compute the cogeoid by adding the undulation due short wavelength grid to GGM height anomaly grid, as shown below:
+
+```
+N = reshape(height_anomaly_gg, [101,101])'; % Reshaping the heigth anomaly to form a grid
+N_cogeoid = Nr + N;
+```
+
+
+### Step 11
+
+1. Compute the indirect effect due to terrain on the undulation using [compute_indirect_undulation](./compute_indirect_undulation.m), as shown below:
+
+```
+dN = compute_indirect_undulation(H_dem, 1/1200, X_dem, Y_dem, 'WGS84');
+```
+
+2. Compute the final geoid by adding the indirect effects to the cogeoid, as shown below:
+```
+N_geoid = N_cogeoid + dN;
+```
+
+***Note***: For information regarding input and output to each of the function use:
+```
+help "function_name"
+```
